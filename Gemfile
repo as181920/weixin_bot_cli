@@ -7,6 +7,7 @@ end
 
 gem 'activesupport'
 gem 'faraday'
+gem 'faraday-cookie_jar'
 gem 'rqrcode'
 
 group :development, :test do

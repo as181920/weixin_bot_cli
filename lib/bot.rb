@@ -18,7 +18,7 @@ class WeixinBot
     get_init_info
     open_status_notify
     get_contact
-    # sync_message
+    sync_message
   end
 
   def get_uuid
@@ -94,6 +94,7 @@ class WeixinBot
     logger.info "get init info response #{resp.status}: #{Utility.compact_json(resp.body)}"
     init_info = JSON.load(resp.body)
     @user_name = init_info["User"]["UserName"]
+    @sync_key = init_info["SyncKey"]["List"].map{|h| "#{h['Key']}_#{h['Val']}" }.join("|")
   end
 
   def open_status_notify
@@ -139,22 +140,29 @@ class WeixinBot
   end
 
   def sync_message
-    begin
-      synccheck_params = {
-        r: Utility.current_timestamp,
-        skey: CookieStore.skey,
-        sid: CookieStore.wxsid,
-        uin: CookieStore.wxuin,
-        deviceid: Utility.device_id,
-        synckey: webwx_init_info["SyncKey"]["List"].map{|h| "#{h['Key']}_#{h['Val']}" }.join("|")
-      }
-      synccheck_resp = client.get "https://webpush.weixin.qq.com/cgi-bin/mmwebwx-bin/synccheck?#{synccheck_params.to_query}"
-      logger.info "synccheck response #{synccheck_resp.status}: #{synccheck_resp.body}"
-    rescue => e
-      logger.error "#{e.class.name}: #{e.message}"
-      retry
+    loop do
+      check_result = sync_check
+      raise SyncCheckError, check_result.to_json unless check_result["retcode"] == "0"
+      get_message if check_result["selector"].to_i > 0
     end
+  end
 
+  def sync_check
+    params = {
+      r: Utility.current_timestamp("ms"),
+      sid: CookieStore.wxsid,
+      uin: CookieStore.wxuin,
+      deviceid: Utility.device_id,
+      synckey: sync_key,
+      _: Utility.current_timestamp("ms")
+    }
+    logger.info "sync check request: https://webpush.weixin.qq.com/cgi-bin/mmwebwx-bin/synccheck?#{params.to_query}"
+    resp = client.get "https://webpush.wx.qq.com/cgi-bin/mmwebwx-bin/synccheck?#{params.to_query}"
+    logger.info "sync check response #{resp.status}: #{resp.body}"
+    Hash[*resp.body.split("=")[-1].gsub(/{|}|\"/, "").split(/:|,/)]
+  end
+
+  def get_message
     webwxsync_params = {
       sid: cookie_info["wxsid"],
       skey: cookie_info["skey"],

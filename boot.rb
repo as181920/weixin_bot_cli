@@ -14,7 +14,10 @@ require_relative "lib/application_record"
 Dir.glob(APP_ROOT + "/lib/**/*.rb").each{|f| require f }
 
 def client
-  @client ||= Faraday.new
+  @client ||= Faraday.new do |builder|
+    builder.use :cookie_jar
+    builder.adapter Faraday.default_adapter
+  end
 end
 
 def logger

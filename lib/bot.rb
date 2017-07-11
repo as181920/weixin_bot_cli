@@ -1,5 +1,6 @@
 class WeixinBot
   attr_accessor :uuid, :ticket, :lang, :scan
+  attr_accessor :user_name, :sync_key
 
   WEIXIN_APPID = 'wx782c26e4c19acffb'
   ConfirmLoginError = Class.new StandardError
@@ -14,8 +15,10 @@ class WeixinBot
     show_login_qrcode
     confirm_login
     get_cookie
-    weixin_init
-    sync_message
+    get_init_info
+    open_status_notify
+    get_contact
+    # sync_message
   end
 
   def get_uuid
@@ -72,28 +75,77 @@ class WeixinBot
     CookieStore.set(Utility.parse_xml(resp.body)["error"])
   end
 
-  def weixin_init
-    logger.info "webwx init resquest: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxinit?lang=en_US&pass_ticket=#{pass_ticket}"
-    webwx_init_resp = client.post "https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxinit?r=#{Utility.current_timestamp}&lang=en_US&pass_ticket=#{pass_ticket}", {
+  def get_init_info
+    params = {
+      r: Utility.current_timestamp,
+      lang: lang,
+      pass_ticket: CookieStore.pass_ticket
+    }
+    body = {
       BaseRequest: {
-        Uin: cookie_info["wxuin"],
-        Sid: cookie_info["wxsid"],
-        Skey: cookie_info["skey"],
-        DeviseID: get_device_id
+        Uin: CookieStore.wxuin,
+        Sid: CookieStore.wxsid,
+        Skey: CookieStore.skey,
+        DeviseID: Utility.device_id
       }
-    }.to_json
-    logger.info "webwx init response #{webwx_init_resp.status}: #{webwx_init_resp.body}"
-    webwx_init_info = JSON.load(webwx_init_resp.body)
+    }
+    logger.info "get init info resquest: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxinit?#{params.to_query}"
+    resp = client.post "https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxinit?#{params.to_query}", body.to_json
+    logger.info "get init info response #{resp.status}: #{Utility.compact_json(resp.body)}"
+    init_info = JSON.load(resp.body)
+    @user_name = init_info["User"]["UserName"]
+  end
+
+  def open_status_notify
+    params = {
+      lang: lang,
+      pass_ticket: CookieStore.pass_ticket
+    }
+    body = {
+      BaseRequest: {
+        Uin: CookieStore.wxuin,
+        Sid: CookieStore.wxsid,
+        Skey: CookieStore.skey,
+        DeviseID: Utility.device_id
+      },
+      Code: 3,
+      FromUserName: user_name,
+      ToUserName: user_name,
+      ClientMsgId: Utility.current_timestamp
+    }
+    logger.info "open status notify request: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxstatusnotify?#{params.to_query}"
+    resp = client.post "https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxstatusnotify?#{params.to_query}", body.to_json
+    logger.info "open status notify response #{resp.status}: #{Utility.compact_json(resp.body)}"
+  end
+
+  def get_contact
+    params = {
+      seq: 0,
+      pass_ticket: CookieStore.pass_ticket,
+      skey: CookieStore.skey,
+      r: Utility.current_timestamp
+    }
+    body = {
+      BaseRequest: {
+        Uin: CookieStore.wxuin,
+        Sid: CookieStore.wxsid,
+        Skey: CookieStore.skey,
+        DeviseID: Utility.device_id
+      }
+    }
+    logger.info "get contact request: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxgetcontact?#{params.to_query}"
+    resp = client.post "https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxgetcontact?#{params.to_query}", body.to_json
+    logger.info "get contact response #{resp.status}: #{Utility.compact_json(resp.body)}"
   end
 
   def sync_message
     begin
       synccheck_params = {
         r: Utility.current_timestamp,
-        skey: cookie_info["skey"],
-        sid: cookie_info["wxsid"],
-        uin: cookie_info["wxuin"],
-        deviceid: get_device_id,
+        skey: CookieStore.skey,
+        sid: CookieStore.wxsid,
+        uin: CookieStore.wxuin,
+        deviceid: Utility.device_id,
         synckey: webwx_init_info["SyncKey"]["List"].map{|h| "#{h['Key']}_#{h['Val']}" }.join("|")
       }
       synccheck_resp = client.get "https://webpush.weixin.qq.com/cgi-bin/mmwebwx-bin/synccheck?#{synccheck_params.to_query}"
@@ -109,17 +161,17 @@ class WeixinBot
       lang: "en_US",
       pass_ticket: pass_ticket,
     }
-    webwxsync_resp = client.post("https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxsync?#{webwxsync_params.to_query}"), {
+    body = {
       BaseRequest: {
-        DeviseID: get_device_id,
+        DeviseID: Utility.device_id,
         Sid: cookie_info["wxsid"],
         Skey: cookie_info["skey"],
         Uin: cookie_info["wxuin"]
       },
       SyncKey: webwx_init_info["SyncKey"],
       rr: Time.now.to_i
-    }.to_json
-    byebug
+    }
+    webwxsync_resp = client.post("https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxsync?#{webwxsync_params.to_query}"), body.to_json
     logger.info "webwxsync response #{webwxsync_resp.status}: #{webwxsync_resp.body}"
   end
 end

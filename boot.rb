@@ -21,8 +21,3 @@ def logger
   @logger ||= Logger.new STDOUT
 end
 
-def get_device_id
-  "e#{Random.rand(10**15).to_s.rjust(15,'0')}"
-end
-
-

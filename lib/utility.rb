@@ -1,6 +1,10 @@
 module Utility
   extend self
 
+  def device_id
+    @device_id ||= "e#{Random.rand(10**15).to_s.rjust(15,'0')}"
+  end
+
   def current_timestamp(unit="s")
     case unit
     when "s"
@@ -26,5 +30,9 @@ module Utility
 
   def parse_xml(xml="")
     Hash.from_xml(xml)
+  end
+
+  def compact_json(json=nil)
+    JSON.load(json).to_json
   end
 end

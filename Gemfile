@@ -7,9 +7,9 @@ end
 
 gem 'activesupport'
 gem 'faraday'
-gem 'nokogiri'
 gem 'rqrcode'
 
 group :development, :test do
-  gem 'byebug'
+  gem 'rake'
+  gem 'pry-byebug'
 end

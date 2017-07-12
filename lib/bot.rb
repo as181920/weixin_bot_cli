@@ -181,7 +181,7 @@ class WeixinBot
     }
     logger.info "get message request: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxsync?#{params.to_query}"
     resp = client.post "https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxsync?#{params.to_query}", body.to_json
-    logger.info "get message response: #{resp.status}: #{JSON.load(resp.body).slice('BaseResponse', 'AddMsgCount').to_json}"
+    logger.info "get message response: #{resp.status}: #{JSON.load(resp.body).slice('BaseResponse', 'AddMsgCount', 'AddMsgList').to_json}"
     resp_info = JSON.load(resp.body)
     @sync_key = resp_info["SyncKey"]
     resp_info['AddMsgList'].each {|msg| MessageHandler.new(self).reply(msg) }

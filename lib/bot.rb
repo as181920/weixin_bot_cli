@@ -91,7 +91,7 @@ class WeixinBot
     }
     logger.info "get init info resquest: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxinit?#{params.to_query}"
     resp = client.post "https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxinit?#{params.to_query}", body.to_json
-    logger.info "get init info response #{resp.status}: #{Utility.compact_json(resp.body)}"
+    logger.info "get init info response #{resp.status}: #{JSON.load(resp.body).slice('BaseResponse', 'Count', 'User').to_json}"
     init_info = JSON.load(resp.body)
     @user_name = init_info["User"]["UserName"]
     @sync_key = init_info["SyncKey"]
@@ -136,7 +136,7 @@ class WeixinBot
     }
     logger.info "get contact request: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxgetcontact?#{params.to_query}"
     resp = client.post "https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxgetcontact?#{params.to_query}", body.to_json
-    logger.info "get contact response #{resp.status}: #{Utility.compact_json(resp.body)}"
+    logger.info "get contact response #{resp.status}: #{JSON.load(resp.body).slice('BaseResponse', 'MemberCount').to_json}"
   end
 
   def sync_message
@@ -181,7 +181,7 @@ class WeixinBot
     }
     logger.info "get message request: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxsync?#{params.to_query}"
     resp = client.post "https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxsync?#{params.to_query}", body.to_json
-    logger.info "get message response: #{resp.status}: #{Utility.compact_json(resp.body)}"
+    logger.info "get message response: #{resp.status}: #{JSON.load(resp.body).slice('BaseResponse', 'AddMsgCount').to_json}"
     resp_info = JSON.load(resp.body)
     @sync_key = resp_info["SyncKey"]
   end

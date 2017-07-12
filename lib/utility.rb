@@ -35,4 +35,8 @@ module Utility
   def compact_json(json=nil)
     JSON.load(json).to_json
   end
+
+  def client_msg_id
+    "#{Time.now.to_i * 10000}#{Random.rand(1000..9999)}"
+  end
 end

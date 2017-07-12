@@ -26,7 +26,7 @@ class WeixinBot
       appid: WEIXIN_APPID,
       redirect_uri: "https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxnewloginpage",
       fun: "new",
-      lang: "en_US",
+      lang: lang,
       _: Utility.current_timestamp("ms")
     }
     logger.info "uuid request: https://login.weixin.qq.com/jslogin?#{params.to_query}"
@@ -184,6 +184,7 @@ class WeixinBot
     logger.info "get message response: #{resp.status}: #{JSON.load(resp.body).slice('BaseResponse', 'AddMsgCount').to_json}"
     resp_info = JSON.load(resp.body)
     @sync_key = resp_info["SyncKey"]
+    resp_info['AddMsgList'].each {|msg| MessageHandler.new(self).reply(msg) }
   end
 
   private

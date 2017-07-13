@@ -8,20 +8,38 @@ module WeixinBotCli
     WEIXIN_APPID = 'wx782c26e4c19acffb'
     ConfirmLoginError = Class.new StandardError
 
-    def initialize(options={})
+    class << self
+      def get_uuid
+        params = {
+          appid: WEIXIN_APPID,
+          redirect_uri: "https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxnewloginpage",
+          fun: "new",
+          lang: 'en_US',
+          _: Utility.current_timestamp("ms")
+        }
+        logger.info "get_uuid request => url: https://login.weixin.qq.com/jslogin?#{params.to_query}"
+        resp = Faraday.get("https://login.weixin.qq.com/jslogin?#{params.to_query}")
+        logger.info "get_uuid response #{resp.status} => #{resp.body}"
+        return resp.body.split('"')[-2]
+      end
+
+      def logger
+        @logger ||= Logger.new STDOUT
+      end
+    end
+
+    def initialize(uuid)
+      @uuid = uuid
       @client = Faraday.new do |builder|
         builder.use :cookie_jar
         builder.adapter Faraday.default_adapter
       end
       @logger = Logger.new STDOUT
       @device_id = "e#{Random.rand(10**15).to_s.rjust(15,'0')}"
-
-      options[:lang] ||= "en_US"
-      HashWithIndifferentAccess.new(options).slice(:lang).each { |k, v| instance_variable_set("@#{k}", v) }
+      @lang =  "en_US"
     end
 
     def run
-      get_uuid
       show_login_qrcode
       confirm_login
       get_cookie
@@ -29,20 +47,6 @@ module WeixinBotCli
       open_status_notify
       get_contact
       sync_message
-    end
-
-    def get_uuid
-      params = {
-        appid: WEIXIN_APPID,
-        redirect_uri: "https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxnewloginpage",
-        fun: "new",
-        lang: lang,
-        _: Utility.current_timestamp("ms")
-      }
-      logger.info "uuid request: https://login.weixin.qq.com/jslogin?#{params.to_query}"
-      resp = client.get("https://login.weixin.qq.com/jslogin?#{params.to_query}")
-      logger.info "uuid response #{resp.status}: #{resp.body}"
-      @uuid = resp.body.split('"')[-2]
     end
 
     def show_login_qrcode
@@ -56,9 +60,9 @@ module WeixinBotCli
           tip: 0,
           _: Utility.current_timestamp
         }
-        logger.info "login confirm request: https://login.weixin.qq.com/cgi-bin/mmwebwx-bin/login?#{params.to_query}"
+        logger.info "confirm_login request => url: https://login.weixin.qq.com/cgi-bin/mmwebwx-bin/login?#{params.to_query}"
         resp = client.get("https://login.weixin.qq.com/cgi-bin/mmwebwx-bin/login?#{params.to_query}")
-        logger.info "login confirm resp #{resp.status}: #{resp.body}"
+        logger.info "confirm_login response #{resp.status} => #{resp.body}"
         resp_info = Utility.str_to_hash(resp.body)
         if resp_info["window.redirect_uri"].present?
           break Utility.parse_url_query(resp_info["window.redirect_uri"]).slice("ticket", "scan").each{|k, v| instance_variable_set("@#{k}", v) }
@@ -79,9 +83,9 @@ module WeixinBotCli
         fun: "new",
         version: "v2"
       }
-      logger.info "cookie request: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxnewloginpage?#{params.to_query}"
+      logger.info "get_cookie request => url: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxnewloginpage?#{params.to_query}"
       resp = client.get("https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxnewloginpage?#{params.to_query}")
-      logger.info "cookie response #{resp.status}: #{resp.body}"
+      logger.info "get_cookie response #{resp.status} => #{resp.body}"
       HashWithIndifferentAccess.new(Utility.parse_xml(resp.body)["error"]).slice(:wxuin, :wxsid, :skey, :pass_ticket).each{ |k, v| instance_variable_set "@#{k}", v }
     end
 
@@ -94,9 +98,9 @@ module WeixinBotCli
       body = {
         BaseRequest: base_request
       }
-      logger.info "get init info resquest: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxinit?#{params.to_query}"
+      logger.info "get_init_info resquest => url: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxinit?#{params.to_query}, body: #{body.to_json}"
       resp = client.post "https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxinit?#{params.to_query}", body.to_json
-      logger.info "get init info response #{resp.status}: #{JSON.load(resp.body).slice('BaseResponse', 'Count', 'User').to_json}"
+      logger.info "get_init_info response #{resp.status} => #{JSON.load(resp.body).slice('BaseResponse', 'Count', 'User').to_json}"
       init_info = JSON.load(resp.body)
       @bot_user_name = init_info["User"]["UserName"]
       @sync_key = init_info["SyncKey"]
@@ -114,9 +118,9 @@ module WeixinBotCli
         ToUserName: bot_user_name,
         ClientMsgId: Utility.current_timestamp
       }
-      logger.info "open status notify request: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxstatusnotify?#{params.to_query}"
+      logger.info "open_status_notify request => url: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxstatusnotify?#{params.to_query}, body: #{body.to_json}"
       resp = client.post "https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxstatusnotify?#{params.to_query}", body.to_json
-      logger.info "open status notify response #{resp.status}: #{Utility.compact_json(resp.body)}"
+      logger.info "open_status_notify response #{resp.status} => #{Utility.compact_json(resp.body)}"
     end
 
     def get_contact
@@ -129,9 +133,9 @@ module WeixinBotCli
       body = {
         BaseRequest: base_request
       }
-      logger.info "get contact request: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxgetcontact?#{params.to_query}"
+      logger.info "get_contact request => url: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxgetcontact?#{params.to_query}, body: #{body.to_json}"
       resp = client.post "https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxgetcontact?#{params.to_query}", body.to_json
-      logger.info "get contact response #{resp.status}: #{JSON.load(resp.body).slice('BaseResponse', 'MemberCount').to_json}"
+      logger.info "get_contact response #{resp.status} => #{JSON.load(resp.body).slice('BaseResponse', 'MemberCount').to_json}"
     end
 
     def sync_message
@@ -151,9 +155,9 @@ module WeixinBotCli
         synckey: synckey_to_str(sync_key),
         _: Utility.current_timestamp("ms")
       }
-      logger.info "sync check request: https://webpush.weixin.qq.com/cgi-bin/mmwebwx-bin/synccheck?#{params.to_query}"
+      logger.info "sync_check request => url: https://webpush.weixin.qq.com/cgi-bin/mmwebwx-bin/synccheck?#{params.to_query}"
       resp = client.get "https://webpush.wx.qq.com/cgi-bin/mmwebwx-bin/synccheck?#{params.to_query}"
-      logger.info "sync check response #{resp.status}: #{resp.body}"
+      logger.info "sync_check response #{resp.status} => #{resp.body}"
       Hash[*resp.body.split("=")[-1].gsub(/{|}|\"/, "").split(/:|,/)]
     end
 
@@ -169,9 +173,9 @@ module WeixinBotCli
         SyncKey: sync_key,
         rr: ~Utility.current_timestamp
       }
-      logger.info "get message request: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxsync?#{params.to_query}"
+      logger.info "get_message request => url: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxsync?#{params.to_query}, body: #{body.to_json}"
       resp = client.post "https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxsync?#{params.to_query}", body.to_json
-      logger.info "get message response: #{resp.status}: #{JSON.load(resp.body).slice('BaseResponse', 'AddMsgCount', 'AddMsgList').to_json}"
+      logger.info "get_message response #{resp.status} => #{JSON.load(resp.body).slice('BaseResponse', 'AddMsgCount', 'AddMsgList').to_json}"
       resp_info = JSON.load(resp.body)
       @sync_key = resp_info["SyncKey"]
       resp_info['AddMsgList'].each do |msg|
@@ -190,9 +194,9 @@ module WeixinBotCli
         BaseRequest: base_request,
         Msg: msg
       }
-      logger.info "send msg request: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxsendmsg?#{params.to_query}"
+      logger.info "send_message request => url: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxsendmsg?#{params.to_query}, body: #{body.to_json}"
       resp = client.post "https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxsendmsg?#{params.to_query}", body.to_json
-      logger.info "send msg response #{resp.status}: #{Utility.compact_json(resp.body)}"
+      logger.info "send_message response #{resp.status} => #{Utility.compact_json(resp.body)}"
     end
 
     private

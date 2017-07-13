@@ -19,7 +19,7 @@ end
 
 desc "Run bot"
 task :run do
-  WeixinBotCli::Bot.new.run
+  WeixinBotCli::Bot.new(WeixinBotCli::Bot.get_uuid).run
 end
 
 task default: :console

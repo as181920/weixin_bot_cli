@@ -1,3 +1,12 @@
+PATH
+  remote: .
+  specs:
+    weixin_bot_cli (0.1.0)
+      activesupport
+      faraday
+      faraday-cookie_jar
+      rqrcode
+
 GEM
   remote: https://rubygems.org/
   specs:
@@ -45,12 +54,11 @@ PLATFORMS
   ruby
 
 DEPENDENCIES
-  activesupport
-  faraday
-  faraday-cookie_jar
+  bundler
+  minitest
   pry-byebug
   rake
-  rqrcode
+  weixin_bot_cli!
 
 BUNDLED WITH
    1.14.6

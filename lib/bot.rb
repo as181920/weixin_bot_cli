@@ -184,7 +184,35 @@ class WeixinBot
     logger.info "get message response: #{resp.status}: #{JSON.load(resp.body).slice('BaseResponse', 'AddMsgCount', 'AddMsgList').to_json}"
     resp_info = JSON.load(resp.body)
     @sync_key = resp_info["SyncKey"]
-    resp_info['AddMsgList'].each {|msg| MessageHandler.new(self).reply(msg) }
+    resp_info['AddMsgList'].each {|msg| send_message(MessageHandler.reply(msg).reverse_merge(from: user_name, to: resp_info["FromUserName"])) }
+  end
+
+  def send_message(msg)
+    return false unless msg.present?
+    client_msg_id = Utility.client_msg_id
+    params = {
+      lang: lang,
+      pass_ticket: CookieStore.pass_ticket
+    }
+    body = {
+      BaseRequest: {
+        Uin: CookieStore.wxuin,
+        Sid: CookieStore.wxsid,
+        Skey: CookieStore.skey,
+        DeviceID: Utility.device_id
+      },
+      Msg: {
+        Type: msg[:type],
+        Content: msg[:content],
+        FromUserName: msg[:from],
+        ToUserName: msg[:to],
+        LocalID: client_msg_id,
+        ClientMsgId: client_msg_id
+      }
+    }
+    logger.info "send msg request: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxsendmsg?#{params.to_query}"
+    resp = client.post "https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxsendmsg?#{params.to_query}", body.to_json
+    logger.info "send msg response #{resp.status}: #{Utility.compact_json(resp.body)}"
   end
 
   private

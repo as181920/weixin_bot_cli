@@ -3,7 +3,8 @@ module WeixinBotCli
     attr_accessor :client, :logger, :device_id
     attr_accessor :uuid, :ticket, :scan, :lang
     attr_accessor :wxuin, :wxsid, :skey, :pass_ticket
-    attr_accessor :bot_user_name, :sync_key
+    attr_accessor :current_user, :contact_list, :member_list, :sync_key
+    attr_accessor :user_handler, :contact_handler, :message_handler
 
     WEIXIN_APPID = 'wx782c26e4c19acffb'
     ConfirmLoginError = Class.new StandardError
@@ -37,6 +38,9 @@ module WeixinBotCli
       @logger = Logger.new STDOUT
       @device_id = "e#{Random.rand(10**15).to_s.rjust(15,'0')}"
       @lang =  "en_US"
+      @user_handler = UserHandler.new(self)
+      @contact_handler = ContactHandler.new(self)
+      @message_handler = MessageHandler.new(self)
     end
 
     def run
@@ -100,10 +104,14 @@ module WeixinBotCli
       }
       logger.info "get_init_info resquest => url: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxinit?#{params.to_query}, body: #{body.to_json}"
       resp = client.post "https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxinit?#{params.to_query}", body.to_json
-      logger.info "get_init_info response #{resp.status} => #{JSON.load(resp.body).slice('BaseResponse', 'Count', 'User').to_json}"
+      logger.info "get_init_info response #{resp.status} => #{JSON.load(resp.body).slice('BaseResponse', 'Count', 'User', 'ContactList').to_json}"
       init_info = JSON.load(resp.body)
-      @bot_user_name = init_info["User"]["UserName"]
+      @current_user = init_info["User"]
+      @contact_list = init_info["ContactList"]
       @sync_key = init_info["SyncKey"]
+      user_handler.handle(current_user)
+      contact_handler.handle(current_user)
+      contact_list.each { |contact| contact_handler.handle(contact) }
     end
 
     def open_status_notify
@@ -114,8 +122,8 @@ module WeixinBotCli
       body = {
         BaseRequest: base_request,
         Code: 3,
-        FromUserName: bot_user_name,
-        ToUserName: bot_user_name,
+        FromUserName: current_user["UserName"],
+        ToUserName: current_user["UserName"],
         ClientMsgId: Utility.current_timestamp
       }
       logger.info "open_status_notify request => url: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxstatusnotify?#{params.to_query}, body: #{body.to_json}"
@@ -135,7 +143,10 @@ module WeixinBotCli
       }
       logger.info "get_contact request => url: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxgetcontact?#{params.to_query}, body: #{body.to_json}"
       resp = client.post "https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxgetcontact?#{params.to_query}", body.to_json
-      logger.info "get_contact response #{resp.status} => #{JSON.load(resp.body).slice('BaseResponse', 'MemberCount').to_json}"
+      logger.info "get_contact response #{resp.status} => #{Utility.compact_json(resp.body)}"
+      resp_info = JSON.load(resp.body)
+      @member_list = resp_info['MemberList']
+      member_list.each { |member| contact_handler.handle(member) }
     end
 
     def sync_message
@@ -179,9 +190,9 @@ module WeixinBotCli
       resp_info = JSON.load(resp.body)
       @sync_key = resp_info["SyncKey"]
       resp_info['AddMsgList'].each do |msg|
-        reply = Hash(MessageHandler.reply(msg))
+        reply = Hash(message_handler.handle(msg, self))
         client_msg_id = "#{Time.now.to_i * 10000}#{Random.rand(1000..9999)}"
-        send_message({FromUserName: bot_user_name, ToUserName: msg["FromUserName"], LocalID: client_msg_id, ClientMsgId: client_msg_id}.merge(reply)) if reply.present?
+        send_message({FromUserName: current_user["UserName"], ToUserName: msg["FromUserName"], LocalID: client_msg_id, ClientMsgId: client_msg_id}.merge(reply)) if reply.present?
       end
     end
 
@@ -197,6 +208,14 @@ module WeixinBotCli
       logger.info "send_message request => url: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxsendmsg?#{params.to_query}, body: #{body.to_json}"
       resp = client.post "https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxsendmsg?#{params.to_query}", body.to_json
       logger.info "send_message response #{resp.status} => #{Utility.compact_json(resp.body)}"
+    end
+
+    def full_contact_info_list
+      @full_contact_info_list ||= (contact_list + member_list).push(current_user)
+    end
+
+    def full_contact_info_hash
+      @full_contact_info_hash ||= full_contact_info_list.inject({}){|h, e| h.merge!({e["UserName"] => e["NickName"]})}
     end
 
     private

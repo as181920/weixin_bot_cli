@@ -19,7 +19,7 @@ module WeixinBotCli
       puts "Message => #{msg_info.to_json}"
       STDOUT.flush
       if content =~ /@#{bot.current_user["NickName"]}/
-        return {Content: "哼", Type: 1}
+        return {Content: "@#{sender} 哼", Type: 1}
       end
     end
 

@@ -7,12 +7,13 @@ module WeixinBotCli
     end
 
     def handle(msg, bot)
-      sender, content = parse_msg_content(msg["Content"])
+      sender, content = parse_msg_content(msg)
       msg_info = {
         MsgId: msg["MsgId"],
-        FromUserName: bot.full_contact_info_hash[msg["FromUserName"]] || msg["FromUserName"],
-        ToUserName: bot.full_contact_info_hash[msg["ToUserName"]] || msg["ToUserName"],
+        FromUserName: bot.contact_name_pairs[msg["FromUserName"]] || msg["FromUserName"],
+        ToUserName: bot.contact_name_pairs[msg["ToUserName"]] || msg["ToUserName"],
         MsgType: msg["MsgType"],
+        CreateTime: msg["CreateTime"],
         Sender: sender,
         Content: content
       }
@@ -24,12 +25,13 @@ module WeixinBotCli
     end
 
     private
-      def parse_msg_content(content)
+      def parse_msg_content(msg)
+        content = msg["Content"]
         if content =~ /^@\w{10,99}:<br\/>/
           sender, real_content = content.split(":<br/>", 2)
-          return [(bot.full_contact_info_hash[sender] || sender), format_content(real_content)]
+          return [(bot.contact_name_pairs[sender] || sender), format_content(real_content)]
         else
-          return [bot.current_user["NickName"], format_content(content)]
+          return [bot.contact_name_pairs[msg["FromUserName"]], format_content(content)]
         end
       end
 

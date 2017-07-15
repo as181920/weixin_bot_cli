@@ -1,9 +1,21 @@
 module WeixinBotCli
   class Bot
+    SpecialUserNames = [
+      'newsapp', 'fmessage', 'filehelper', 'weibo', 'qqmail',
+      'fmessage', 'tmessage', 'qmessage', 'qqsync', 'floatbottle',
+      'lbsapp', 'shakeapp', 'medianote', 'qqfriend', 'readerapp',
+      'blogapp', 'facebookapp', 'masssendapp', 'meishiapp',
+      'feedsapp', 'voip', 'blogappweixin', 'weixin', 'brandsessionholder',
+      'weixinreminder', 'wxid_novlwrv3lqwv11', 'gh_22b87fa7cb3c',
+      'officialaccounts', 'notification_messages', 'wxid_novlwrv3lqwv11',
+      'gh_22b87fa7cb3c', 'wxitil', 'userexperience_alarm', 'notification_messages'
+    ]
+
     attr_accessor :client, :logger, :device_id
     attr_accessor :uuid, :ticket, :scan, :lang
     attr_accessor :wxuin, :wxsid, :skey, :pass_ticket
-    attr_accessor :current_user, :contact_list, :member_list, :sync_key
+    attr_accessor :current_user, :sync_key
+    attr_accessor :contact_list, :public_list, :group_list, :special_list
     attr_accessor :user_handler, :contact_handler, :message_handler
 
     WEIXIN_APPID = 'wx782c26e4c19acffb'
@@ -38,6 +50,10 @@ module WeixinBotCli
       @logger = Logger.new STDOUT
       @device_id = "e#{Random.rand(10**15).to_s.rjust(15,'0')}"
       @lang =  "en_US"
+      @contact_list = []
+      @public_list = []
+      @group_list = []
+      @special_list = []
       @user_handler = UserHandler.new(self)
       @contact_handler = ContactHandler.new(self)
       @message_handler = MessageHandler.new(self)
@@ -50,6 +66,7 @@ module WeixinBotCli
       get_init_info
       open_status_notify
       get_contact
+      get_group_member
       sync_message
     end
 
@@ -107,11 +124,11 @@ module WeixinBotCli
       logger.info "get_init_info response #{resp.status} => #{JSON.load(resp.body).slice('BaseResponse', 'Count', 'User', 'ContactList').to_json}"
       init_info = JSON.load(resp.body)
       @current_user = init_info["User"]
-      @contact_list = init_info["ContactList"]
       @sync_key = init_info["SyncKey"]
       user_handler.handle(current_user)
       contact_handler.handle(current_user)
-      contact_list.each { |contact| contact_handler.handle(contact) }
+      init_info["ContactList"].each { |contact| push_to_matched_list(contact) }
+      init_info["ContactList"].each { |contact| contact_handler.handle(contact) }
     end
 
     def open_status_notify
@@ -145,8 +162,34 @@ module WeixinBotCli
       resp = client.post "https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxgetcontact?#{params.to_query}", body.to_json
       logger.info "get_contact response #{resp.status} => #{Utility.compact_json(resp.body)}"
       resp_info = JSON.load(resp.body)
-      @member_list = resp_info['MemberList']
-      member_list.each { |member| contact_handler.handle(member) }
+      resp_info['MemberList'].each { |member| push_to_matched_list(member) }
+      resp_info['MemberList'].each { |member| contact_handler.handle(member) }
+    end
+
+    def get_group_member
+      params = {
+        seq: 0,
+        pass_ticket: pass_ticket,
+        type: "ex",
+        r: Utility.current_timestamp
+      }
+      body = {
+        BaseRequest: base_request,
+        Count: group_list.count,
+        List: group_list.map{|g| {UserName: g["UserName"], EncryChatRoomId: ""} }
+      }
+      logger.info "get_group_member request => url: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxbatchgetcontact?#{params.to_query}, body: #{body.to_json}"
+      resp = client.post "https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxbatchgetcontact?#{params.to_query}", body.to_json
+      logger.info "get_group_member response #{resp.status} => #{Utility.compact_json(resp.body)}"
+      resp_info = JSON.load(resp.body)
+      resp_info["ContactList"].each do |group|
+        group_list.detect{ |g| g["UserName"] == group["UserName"] }&.tap do |g|
+          g.merge!("EncryChatRoomId" => group["EncryChatRoomId"], "MemberList" => group["MemberList"])
+          g["MemberList"].each do |member|
+            contact_handler.handle(member.merge("ChatGroupName" => g["NickName"]))
+          end
+        end
+      end
     end
 
     def sync_message
@@ -211,20 +254,35 @@ module WeixinBotCli
     end
 
     def full_contact_info_list
-      @full_contact_info_list ||= (contact_list + member_list).push(current_user)
+      @full_contact_info_list ||= (contact_list + public_list + special_list + group_list).push(current_user).tap do |info_list|
+        group_list.map{ |g| info_list += g["MemberList"] }
+      end
     end
 
-    def full_contact_info_hash
-      @full_contact_info_hash ||= full_contact_info_list.inject({}){|h, e| h.merge!({e["UserName"] => e["NickName"]})}
+    def contact_name_pairs
+      @contact_name_pairs ||= full_contact_info_list.inject({}){|h, e| h.merge!({e["UserName"] => e["NickName"]})}
     end
 
     private
-    def synckey_to_str(sync_key_hash)
-      sync_key_hash["List"].map{|h| "#{h['Key']}_#{h['Val']}" }.join("|")
-    end
+      def synckey_to_str(sync_key_hash)
+        sync_key_hash["List"].map{|h| "#{h['Key']}_#{h['Val']}" }.join("|")
+      end
 
-    def base_request
-      { Uin: wxuin, Sid: wxsid, Skey: skey, DeviceID: device_id }
-    end
+      def push_to_matched_list(contact)
+        matched_list = if contact["UserName"].in?(SpecialUserNames)
+                         @special_list
+                       elsif contact["VerifyFlag"].in?([8, 24, 56])
+                         @public_list
+                       elsif contact["UserName"] =~ /^@@/
+                         @group_list
+                       else
+                         @contact_list
+                       end
+        matched_list.push(contact.slice("UserName", "NickName", "Signature", "EncryChatRoomId", "MemberList"))
+      end
+
+      def base_request
+        { Uin: wxuin, Sid: wxsid, Skey: skey, DeviceID: device_id }
+      end
   end
 end

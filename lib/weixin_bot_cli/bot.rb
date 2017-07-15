@@ -126,7 +126,6 @@ module WeixinBotCli
       @current_user = init_info["User"]
       @sync_key = init_info["SyncKey"]
       user_handler.handle(current_user)
-      contact_handler.handle(current_user)
       init_info["ContactList"].each { |contact| push_to_matched_list(contact) }
       init_info["ContactList"].each { |contact| contact_handler.handle(contact) }
     end

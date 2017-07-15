@@ -10,11 +10,11 @@ module WeixinBotCli
       sender, content = parse_msg_content(msg)
       msg_info = {
         MsgId: msg["MsgId"],
-        FromUserName: bot.contact_name_pairs[msg["FromUserName"]] || msg["FromUserName"],
-        ToUserName: bot.contact_name_pairs[msg["ToUserName"]] || msg["ToUserName"],
+        From: bot.contact_name_pairs[msg["FromUserName"]] || msg["FromUserName"],
+        To: bot.contact_name_pairs[msg["ToUserName"]] || msg["ToUserName"],
+        Sender: sender,
         MsgType: msg["MsgType"],
         CreateTime: msg["CreateTime"],
-        Sender: sender,
         Content: content
       }
       puts "Message => #{msg_info.to_json}"

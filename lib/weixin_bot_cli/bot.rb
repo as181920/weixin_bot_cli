@@ -110,7 +110,7 @@ module WeixinBotCli
       resp = client.get("https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxnewloginpage?#{params.to_query}")
       logger.info "get_cookie response #{resp.status} => #{resp.body}"
       resp_info = Utility.parse_xml(resp.body.gsub(/&(?!(?:amp|lt|gt|quot|apos);)/, '&amp;'))["error"]
-      raise GetCookieError if resp_info["redirecturl"].present?
+      raise GetCookieError unless (resp_info["ret"] == "0") && resp_info["redirecturl"].blank?
       resp_info.slice("wxuin", "wxsid", "skey", "pass_ticket").each{ |k, v| instance_variable_set "@#{k}", v }
     end
 

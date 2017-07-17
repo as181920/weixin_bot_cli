@@ -185,7 +185,7 @@ module WeixinBotCli
         group_list.detect{ |g| g["UserName"] == group["UserName"] }&.tap do |g|
           g.merge!("EncryChatRoomId" => group["EncryChatRoomId"], "MemberList" => group["MemberList"])
           g["MemberList"].each do |member|
-            contact_handler.handle(member.merge("ChatGroupName" => g["NickName"]))
+            contact_handler.handle(member.merge("Topic" => g["NickName"]))
           end
         end
       end
@@ -252,6 +252,55 @@ module WeixinBotCli
       logger.info "send_message response #{resp.status} => #{Utility.compact_json(resp.body)}"
     end
 
+    def get_fake_contact
+      group = fake_contact_detect_group
+      return nil unless group.present?
+
+      contact_list[1..-1].each do |contact|
+        add_member_to_group(contact, group) && delete_member_to_group(contact, group)
+      end
+    end
+
+    def add_member_to_group(member, group)
+      params = {
+        lang: lang,
+        fun: "addmember",
+        pass_ticket: pass_ticket
+      }
+      body = {
+        BaseRequest: base_request,
+        ChatRoomName: group["UserName"],
+        AddMemberList: member["UserName"]
+      }
+      logger.info "add_member_to_group request => url: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxupdatechatroom?#{params.to_query}, body: #{body.to_json}"
+      resp = client.post "https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxupdatechatroom?#{params.to_query}", body.to_json
+      resp_info = JSON.load(resp.body)
+      logger.info "add_member_to_group response #{resp.status} => #{Utility.compact_json(resp.body)}"
+      if resp_info["BaseResponse"]["Ret"].zero?
+        return true
+      else
+        contact_handler.handle({"UserName" => member["UserName"], "NickName" => member["NickName"], "Signature" => member["Signature"], "Status" => "been_deleted"})
+        return false
+      end
+
+    end
+
+    def delete_member_to_group(member, group)
+      params = {
+        lang: lang,
+        fun: "delmember",
+        pass_ticket: pass_ticket
+      }
+      body = {
+        BaseRequest: base_request,
+        ChatRoomName: group["UserName"],
+        DelMemberList: member["UserName"]
+      }
+      logger.info "delete_member_to_group request => url: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxupdatechatroom?#{params.to_query}, body: #{body.to_json}"
+      resp = client.post "https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxupdatechatroom?#{params.to_query}", body.to_json
+      logger.info "delete_member_to_group response #{resp.status} => #{Utility.compact_json(resp.body)}"
+    end
+
     def full_contact_info_list
       @full_contact_info_list ||= (contact_list + public_list + special_list + group_list).push(current_user).tap do |info_list|
         group_list.map{ |g| info_list += g["MemberList"] }
@@ -270,14 +319,44 @@ module WeixinBotCli
       def push_to_matched_list(contact)
         matched_list = if contact["UserName"].in?(SpecialUserNames)
                          @special_list
-                       elsif contact["VerifyFlag"].in?([8, 24, 56])
+                       elsif contact["VerifyFlag"].in?([8, 24, 29, 56])
                          @public_list
                        elsif contact["UserName"] =~ /^@@/
                          @group_list
                        else
                          @contact_list
                        end
-        matched_list.push(contact.slice("UserName", "NickName", "Signature", "EncryChatRoomId", "MemberList"))
+        matched_list.push(contact.slice("UserName", "NickName", "Signature", "VerifyFlag", "EncryChatRoomId", "MemberList"))
+      end
+
+      def fake_contact_detect_group
+        group_list.detect{|g| g["NickName"] == "WxBotTest" } || create_wx_bot_group
+      end
+
+      def create_wx_bot_group
+        params = {
+          lang: lang,
+          r: Utility.current_timestamp,
+          pass_ticket: pass_ticket
+        }
+        body = {
+          BaseRequest: base_request,
+          MemberCount: 2,
+          MemberList: [current_user, contact_list[0]].map{|c| {UserName: c["UserName"]}},
+          Topic: "WxBotGroup"
+        }
+        logger.info "create_wx_bot_group request => url: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxcreatechatroom?#{params.to_query}, body: #{body.to_json}"
+        resp = client.post "https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxcreatechatroom?#{params.to_query}", body.to_json
+        logger.info "create_wx_bot_group response #{resp.status} => #{Utility.compact_json(resp.body)}"
+        resp_info = JSON.load(resp.body)
+        resp_info["MemberList"].each do |member|
+          if (member["UserName"] != current_user["UserName"]) && (member["MemberStatus"] != 0)
+            contact_handler.handle(member.merge("ChatRoomName" => resp_info["Topic"]), Status: member["MemberStatus"])
+          end
+        end
+        if resp_info["BaseResponse"]["Ret"].zero?
+          return {"UserName" => resp_info["ChatRoomName"], "NickName" => resp_info["Topic"]}.tap {|g| group_list.push(g) }
+        end
       end
 
       def base_request

@@ -7,7 +7,7 @@ module WeixinBotCli
     end
 
     def handle(contact)
-      puts "Contact => #{contact.slice('UserName', 'NickName', 'Signature', 'ChatGroupName').to_json}"
+      puts "Contact => #{contact.slice('UserName', 'NickName', 'Signature', 'VerifyFlag', 'Topic', 'Status').to_json}"
       STDOUT.flush
     end
   end

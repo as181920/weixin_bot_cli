@@ -32,7 +32,6 @@ task :get_fake_contact do
   bot.get_init_info
   bot.open_status_notify
   bot.get_contact
-  bot.get_group_member
   bot.get_fake_contact
 end
 

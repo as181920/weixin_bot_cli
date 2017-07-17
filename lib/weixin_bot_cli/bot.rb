@@ -20,6 +20,8 @@ module WeixinBotCli
 
     WEIXIN_APPID = 'wx782c26e4c19acffb'
     ConfirmLoginError = Class.new StandardError
+    GetCookieError = Class.new StandardError
+    SyncCheckError = Class.new StandardError
 
     class << self
       def get_uuid
@@ -107,7 +109,9 @@ module WeixinBotCli
       logger.info "get_cookie request => url: https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxnewloginpage?#{params.to_query}"
       resp = client.get("https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxnewloginpage?#{params.to_query}")
       logger.info "get_cookie response #{resp.status} => #{resp.body}"
-      HashWithIndifferentAccess.new(Utility.parse_xml(resp.body)["error"]).slice(:wxuin, :wxsid, :skey, :pass_ticket).each{ |k, v| instance_variable_set "@#{k}", v }
+      resp_info = Utility.parse_xml(resp.body.gsub(/&(?!(?:amp|lt|gt|quot|apos);)/, '&amp;'))["error"]
+      raise GetCookieError if resp_info["redirecturl"].present?
+      resp_info.slice("wxuin", "wxsid", "skey", "pass_ticket").each{ |k, v| instance_variable_set "@#{k}", v }
     end
 
     def get_init_info
@@ -232,7 +236,7 @@ module WeixinBotCli
       resp_info = JSON.load(resp.body)
       @sync_key = resp_info["SyncKey"]
       resp_info['AddMsgList'].each do |msg|
-        reply = Hash(message_handler.handle(msg, self))
+        reply = Hash(message_handler.handle(msg))
         client_msg_id = "#{Time.now.to_i * 10000}#{Random.rand(1000..9999)}"
         send_message({FromUserName: current_user["UserName"], ToUserName: msg["FromUserName"], LocalID: client_msg_id, ClientMsgId: client_msg_id}.merge(reply)) if reply.present?
       end
@@ -263,7 +267,6 @@ module WeixinBotCli
 
     def add_member_to_group(member, group)
       params = {
-        lang: lang,
         fun: "addmember",
         pass_ticket: pass_ticket
       }
@@ -277,17 +280,20 @@ module WeixinBotCli
       resp_info = JSON.load(resp.body)
       logger.info "add_member_to_group response #{resp.status} => #{Utility.compact_json(resp.body)}"
       if resp_info["BaseResponse"]["Ret"].zero?
+        resp_info["MemberList"].each do |m|
+          if m["MemberStatus"] != 0
+            contact_handler.handle(m.merge("ChatRoomName" => resp_info["Topic"], Status: m["MemberStatus"]))
+          end
+        end
         return true
       else
-        contact_handler.handle({"UserName" => member["UserName"], "NickName" => member["NickName"], "Signature" => member["Signature"], "Status" => "been_deleted"})
+        logger.error "add member failed: #{member.to_json}}"
         return false
       end
-
     end
 
     def delete_member_to_group(member, group)
       params = {
-        lang: lang,
         fun: "delmember",
         pass_ticket: pass_ticket
       }
@@ -330,7 +336,7 @@ module WeixinBotCli
       end
 
       def fake_contact_detect_group
-        group_list.detect{|g| g["NickName"] == "WxBotTest" } || create_wx_bot_group
+        group_list.detect{|g| g["NickName"] == "WxBotGroup" } || create_wx_bot_group
       end
 
       def create_wx_bot_group
@@ -351,7 +357,7 @@ module WeixinBotCli
         resp_info = JSON.load(resp.body)
         resp_info["MemberList"].each do |member|
           if (member["UserName"] != current_user["UserName"]) && (member["MemberStatus"] != 0)
-            contact_handler.handle(member.merge("ChatRoomName" => resp_info["Topic"]), Status: member["MemberStatus"])
+            contact_handler.handle(member.merge("ChatRoomName" => resp_info["Topic"], Status: member["MemberStatus"]))
           end
         end
         if resp_info["BaseResponse"]["Ret"].zero?

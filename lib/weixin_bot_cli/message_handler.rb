@@ -6,7 +6,7 @@ module WeixinBotCli
       @bot = bot
     end
 
-    def handle(msg, bot)
+    def handle(msg)
       sender, content = parse_msg_content(msg)
       msg_info = {
         MsgId: msg["MsgId"],

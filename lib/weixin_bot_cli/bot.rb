@@ -187,9 +187,10 @@ module WeixinBotCli
       resp_info = JSON.load(resp.body)
       resp_info["ContactList"].each do |group|
         group_list.detect{ |g| g["UserName"] == group["UserName"] }&.tap do |g|
-          g.merge!("EncryChatRoomId" => group["EncryChatRoomId"], "MemberList" => group["MemberList"])
+          g.merge!("MemberList" => group["MemberList"])
           g["MemberList"].each do |member|
-            contact_handler.handle(member.merge("Topic" => g["NickName"]))
+            push_to_matched_list(member.merge("ChatGroupName" => g["NickName"]))
+            contact_handler.handle(member.merge("ChatGroupName" => g["NickName"]))
           end
         end
       end
@@ -282,7 +283,7 @@ module WeixinBotCli
       if resp_info["BaseResponse"]["Ret"].zero?
         resp_info["MemberList"].each do |m|
           if m["MemberStatus"] != 0
-            contact_handler.handle(m.merge("ChatRoomName" => resp_info["Topic"], Status: m["MemberStatus"]))
+            contact_handler.handle(m.merge("ChatGroupName" => resp_info["Topic"], Status: m["MemberStatus"]))
           end
         end
         return true
@@ -332,7 +333,7 @@ module WeixinBotCli
                        else
                          @contact_list
                        end
-        matched_list.push(contact.slice("UserName", "NickName", "Signature", "VerifyFlag", "EncryChatRoomId", "MemberList"))
+        matched_list.push(contact.slice("UserName", "NickName", "Signature", "VerifyFlag", "ChatGroupName", "MemberList"))
       end
 
       def fake_contact_detect_group
@@ -357,7 +358,7 @@ module WeixinBotCli
         resp_info = JSON.load(resp.body)
         resp_info["MemberList"].each do |member|
           if (member["UserName"] != current_user["UserName"]) && (member["MemberStatus"] != 0)
-            contact_handler.handle(member.merge("ChatRoomName" => resp_info["Topic"], Status: member["MemberStatus"]))
+            contact_handler.handle(member.merge("ChatGroupName" => resp_info["Topic"], Status: member["MemberStatus"]))
           end
         end
         if resp_info["BaseResponse"]["Ret"].zero?
